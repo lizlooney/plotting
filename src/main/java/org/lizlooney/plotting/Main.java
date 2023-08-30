@@ -64,7 +64,7 @@ public class Main {
   private static final int BLUE = Color.BLUE.getRGB();
   private static final int WHITE = Color.WHITE.getRGB();
 
-  private final JFrame frame = new JFrame("Plotting");
+  private final JFrame frame;
   private final JButton backButton = new JButton("<");
   private final JButton zoomOutButton = new JButton(new String(Character.toChars(0x1f50d)) + "-");
   private final JButton zoomInButton = new JButton(new String(Character.toChars(0x1f50d)) + "+");
@@ -75,7 +75,9 @@ public class Main {
   private RenderedImage renderedImage;
   private final List<JComponent> components = new ArrayList<>();
 
-  Main() {
+  Main(Function function) {
+    frame = new JFrame("Plotting - " + function);
+
     components.add(backButton);
     components.add(zoomOutButton);
     components.add(zoomInButton);
@@ -85,7 +87,7 @@ public class Main {
     addListeners();
     show();
 
-    new StartWorker().execute();
+    new StartWorker(function).execute();
   }
 
   private void addListeners() {
@@ -131,95 +133,27 @@ public class Main {
     plottingPanel.repaint(0L, 0, 0, SIZE_IN_PIXELS, SIZE_IN_PIXELS);
   }
 
-  private static boolean equal(double a, double b, double tolerance) {
-    return Math.abs(a-b) <= tolerance;
+  private static boolean equal(double tolerance, double a, double... bArray) {
+    for (double b : bArray) {
+      if (Math.abs(a-b) <= tolerance) {
+        return true;
+      }
+    }
+    return false;
   }
 
   class StartWorker extends SwingWorker<Plotting, Object> {
+    private final Function function;
     private final List<JComponent> disabledComponents;
 
-    StartWorker() {
+    StartWorker(Function function) {
+      this.function = function;
       disabledComponents = disableUI();
     }
 
     @Override
     public Plotting doInBackground() {
-      Plotting.Function line = new Plotting.Function() {
-        @Override
-        public boolean evaluate(double x, double y, double tolerance) {
-          // x + y = 0 --> straight line
-          double x1 = -y;
-          if (equal(x1, x, tolerance)) {
-            return true;
-          }
-          double y1 = -x;
-          if (equal(y1, y, tolerance)) {
-            return true;
-          }
-          return false;
-        }
-      };
-      Plotting.Function circle = new Plotting.Function() {
-        @Override
-        public boolean evaluate(double x, double y, double tolerance) {
-          // x^2 + y^2 = 1600
-          double x1 = Math.sqrt(1600 - y*y);
-          double x2 = -x1;
-          if (equal(x1, x, tolerance) || equal(x2, x, tolerance)) {
-            return true;
-          }
-          double y1 = Math.sqrt(1600 - x*x);
-          double y2 = -y1;
-          if (equal(y1, y, tolerance) || equal(y2, y, tolerance)) {
-            return true;
-          }
-          return false;
-        }
-      };
-      Plotting.Function ellipse = new Plotting.Function() {
-        @Override
-        public boolean evaluate(double x, double y, double tolerance) {
-          // x^2 + 4y^2 = 36
-          double x1 = Math.sqrt(36 - 4*y*y);
-          double x2 = -x1;
-          if (equal(x1, x, tolerance) || equal(x2, x, tolerance)) {
-            return true;
-          }
-          double y1 = Math.sqrt((36 - x*x) / 4);
-          double y2 = -y1;
-          if (equal(y1, y, tolerance) || equal(y2, y, tolerance)) {
-            return true;
-          }
-          return false;
-        }
-      };
-      Plotting.Function parabola = new Plotting.Function() {
-        @Override
-        public boolean evaluate(double x, double y, double tolerance) {
-          // x^2 = 4y^2
-          double x1 = Math.sqrt(4*y*y);
-          double x2 = -x1;
-          if (equal(x1, x, tolerance) || equal(x2, x, tolerance)) {
-            return true;
-          }
-          double y1 = Math.sqrt(x*x / 4);
-          double y2 = -y1;
-          if (equal(y1, y, tolerance) || equal(y2, y, tolerance)) {
-            return true;
-          }
-          return false;
-        }
-      };
-      Plotting.Function roseOfGrandi = new Plotting.Function() {
-        @Override
-        public boolean evaluate(double x, double y, double tolerance) {
-          // (x^2 + y^2)^3 = 4a^2x^2y^2
-          double a = 10; // ???
-          // TODO(lizlooney): implement this.
-          return false;
-        }
-      };
-      return new Plotting(circle, NUM_THREADS, SIZE_IN_PIXELS, STARTING_ZOOM);
+      return new Plotting(function.plottingFunction, NUM_THREADS, SIZE_IN_PIXELS, STARTING_ZOOM);
     }
 
     @Override
@@ -373,10 +307,95 @@ public class Main {
     }
   }
 
+  private enum Function {
+    LINE((x, y, tolerance) -> {
+      // x + y = 0 --> straight line
+      double x1 = -y;
+      if (equal(tolerance, x, x1)) {
+        return true;
+      }
+      double y1 = -x;
+      if (equal(tolerance, y, y1)) {
+        return true;
+      }
+      return false;
+    }),
+    CIRCLE((x, y, tolerance) -> {
+      // x^2 + y^2 = 1600
+      double x1 = Math.sqrt(1600 - y*y);
+      double x2 = -x1;
+      if (equal(tolerance, x, x1, x2)) {
+        return true;
+      }
+      double y1 = Math.sqrt(1600 - x*x);
+      double y2 = -y1;
+      if (equal(tolerance, y, y1, y2)) {
+        return true;
+      }
+      return false;
+    }),
+    ELLIPSE((x, y, tolerance) -> {
+      // x^2 + 4y^2 = 1600
+      double x1 = Math.sqrt(1600 - 4*y*y);
+      double x2 = -x1;
+      if (equal(tolerance, x, x1, x2)) {
+        return true;
+      }
+      double y1 = Math.sqrt((1600 - x*x) / 4);
+      double y2 = -y1;
+      if (equal(tolerance, y, y1, y2)) {
+        return true;
+      }
+      return false;
+    }),
+    PARABOLA((x, y, tolerance) -> {
+      // y = ax^2 + bx + c
+      // y = 1/4*x^2 -36
+      double x1 = Math.sqrt((y + 36) * 4);
+      double x2 = -x1;
+      if (equal(tolerance, x, x1, x2)) {
+        return true;
+      }
+      double y1 = x*x / 4 - 36;
+      if (equal(tolerance, y, y1)) {
+        return true;
+      }
+      return false;
+    }),
+    ROSE_OF_GRANDI((x, y, tolerance) -> {
+      // (x^2 + y^2)^3 = 4a^2x^2y^2
+      double a = 10; // ???
+      // TODO(lizlooney): implement this.
+      return false;
+    });
+
+    private final Plotting.Function plottingFunction;
+
+    Function(Plotting.Function plottingFunction) {
+      this.plottingFunction = plottingFunction;
+    }
+  };
+
   public static void main(String[] args) {
     SwingUtilities.invokeLater(new Runnable() {
       public void run() {
-        new Main();
+        if (args.length > 0) {
+          for (String arg : args) {
+            Function function = null;
+            try {
+              function = Function.valueOf(arg.toUpperCase());
+            } catch (IllegalArgumentException e) {
+              System.err.println("\nERROR: There is no function named " + arg + ".");
+            }
+            if (function != null) {
+              new Main(function);
+            }
+          }
+        } else {
+          for (Function function : Function.values()) {
+            new Main(function);
+          }
+        }
       }
     });
   }
